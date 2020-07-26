@@ -105,6 +105,7 @@ To run the examples in this repo, you will need some more dependencies:
 pip install opencv-python
 pip install opencv-contrib-python
 ```
+------------------------------------------------------------
 
 ## Inference with pre-trained models
 
@@ -152,6 +153,7 @@ Let's use video input by enabling the flag `--video_input`, in addition to detec
 python detect_objects.py --video_input --class_ids "1" --threshold 0.3  --video_path data/samples/pedestrian_test.mp4 --model_path models/efficientdet_d0_coco17_tpu-32/saved_model --path_to_labelmap models/mscoco_label_map.pbtxt
 ```
 
+------------------------------------------------------------
 
 ## Preparing your custom dataset for training
 
@@ -181,7 +183,8 @@ I have used the examples provided, and solved some issues to make it work with T
 You can find my file in [data_gen/generate_tfrecord.py](data_gen/generate_tfrecord.py), and you can use it as follows:
 
 ```bash
-python generate_tfrecord.py --path_to_images $DATASET_PATH/train/images --path_to_annot ../data/raccoon_data/train_labels.csv \
+python generate_tfrecord.py --path_to_images ../data/raccoon_data/train/images \ 
+                            --path_to_annot ../data/raccoon_data/train_labels.csv \
                             --path_to_label_map ../models/raccoon_labelmap.pbtxt \
                             --path_to_save_tfrecords ../data/raccoon_data/train.record
 ``` 
@@ -194,14 +197,113 @@ cd data_gen/
 bash gen_data.sh 
 ```  
 
-After running this command, you will find the generated csv and tfrecords (.record) files located in [data/raccoon_data](data/raccoon_data). 
+After running this command, you will find the generated csv and tfrecords (`.record` or `.tfrecord`) files located in [data/raccoon_data](data/raccoon_data). 
 Et voila, we have the tfrecord files generated, and we can use it in next steps for training.
 
+------------------------------------------------------------
 
 ## Training object detection model with your custom dataset
 
-TODO
+To start training our model, we need to prepare a configuration file specifying the backbone model and all the required parameters for training and evaluation.
+In this [tutorial](https://github.com/tensorflow/models/blob/master/research/object_detection/g3doc/configuring_jobs.md) from the object detection api you can find explanation of all the required parameters. 
+But fortunately, they also provide us with many [example config files](https://github.com/tensorflow/models/tree/master/research/object_detection/configs/tf2) that we can use and just modify some parameters to match our requirements.
 
+Here I will be using the the config file of the SSD model with MobileNetV2 backbone as it is small model that can fit in small GPU memory.
+So let's first download the pretrained model with coco dataset that is provided in the [model zoo](https://github.com/tensorflow/models/blob/master/research/object_detection/g3doc/tf2_detection_zoo.md), and use it as initialization to our model.
+This is called fine-tuning, which is simply loading the weights of pretrained model, and use it as a starting point in our training. This will help us too much as we have very small number of images.
+You can read more about transfer learning methods from [here](https://cs231n.github.io/transfer-learning/). 
+
+```bash
+cd models/
+# download the mobilenet_v2 model
+wget http://download.tensorflow.org/models/object_detection/tf2/20200711/ssd_mobilenet_v2_320x320_coco17_tpu-8.tar.gz
+# extract the downloaded file
+tar -xzvf ssd_mobilenet_v2_320x320_coco17_tpu-8.tar.gz
+```
+
+Then you can download the original config file from [here](https://github.com/tensorflow/models/tree/master/research/object_detection/configs/tf2).
+I downloaded [ssd_mobilenet_v2_320x320_coco17_tpu-8.config](https://github.com/tensorflow/models/blob/master/research/object_detection/configs/tf2/ssd_mobilenet_v2_320x320_coco17_tpu-8.config) and made the following changes:
+
+* Changed `num_classes: 1` as we have only class (raccoon), instead of 90 classes in coco dataset.
+* Changed `fine_tune_checkpoint_type: "classification"` to `fine_tune_checkpoint_type: "detection"` as we will be using the pre-trained detection model as initialization.
+* Added the path of the pretrained model in the field `fine_tune_checkpoint:`, for example using the mobilenet v2 model I added `fine_tune_checkpoint: "../models/ssd_mobilenet_v2_320x320_coco17_tpu-8/checkpoint/ckpt-0"`  
+* Changed `batch_size: 512` and used a reasonable number to my GPU memory. I have a 4GB of GPU memory, so I am using `batch_size: 16`
+* Added the maximum number of training iterations in `num_steps:`, and also use the same number in `total_steps:`
+* Adapted the learning rate to our model and batch size (originally they used higher learning rates because they had bigger batch sizes). This values needs some testing and tuning, but finally I used this configuration:
+    ``` 
+    cosine_decay_learning_rate {
+        learning_rate_base: 0.03
+        total_steps: 3000
+        warmup_learning_rate: 0.005
+        warmup_steps: 100 }
+    ```
+* The `label_map_path:` should point to your labelmap (here the raccoon labelmap) `label_map_path: "../models/raccoon_labelmap.pbtxt"`
+* You need to set the `tf_record_input_reader` under both `train_input_reader` and `eval_input_reader`. This should point to the tfrecords we generated.
+    ```
+    train_input_reader: {
+        label_map_path: "../models/raccoon_labelmap.pbtxt"
+        tf_record_input_reader {
+            input_path: "../data/raccoon_data/train.record"
+        }
+    }
+    ``` 
+
+Yous should also prepare the labelmap according to your data. For our raccoon dataset, the labelmap file contains:
+
+```
+item {
+  id: 1
+  name: 'raccoon'
+}
+```
+
+The labelmap file and the modified configuration files are added to this repo for convenience. 
+You can find them is [models/raccoon_labelmap.pbtxt](models/raccoon_labelmap.pbtxt) and [models/ssd_mobilenet_v2_raccoon.config](models/ssd_mobilenet_v2_raccoon.config).
+
+Once you prepare the configuration file, you can start training by typing the following commands: 
+
+```bash
+cd train_tf2
+bash start_train.sh
+```
+
+The [start_train.sh](train_tf2/start_train.sh) file is a simple shell script that contains all the parameters needed for training, and runs the training script.
+The shell file contains the following command: 
+
+```bash
+out_dir=../models/ssd_mobilenet_v2_raccoon/
+mkdir -p $out_dir
+python model_main_tf2.py --alsologtostderr --model_dir=$out_dir --checkpoint_every_n=500  \
+                         --pipeline_config_path=../models/ssd_mobilenet_v2_raccoon.config \
+                         --eval_on_train_data 2>&1 | tee $out_dir/train.log
+``` 
+
+It is also recommended to run the validation script along with the training scripts.
+The training script saves a checkpoint every _n_ steps while training, and this value can be specified in the parameter `--checkpoint_every_n`.
+While training is running, the validation script reads these checkpoints once they are available, and use them to evaluate the model with the validation set.
+This will help us to monitor the training progress by printing the values on the terminal, or by using a GUI monitoring package like [tensorboard](https://www.tensorflow.org/tensorboard/get_started) as we will see.  
+
+To run the validation script along with training script, open another terminal and run:
+
+```bash
+bash start_eval.sh
+```
+
+The [start_eval.sh](train_tf2/start_eval.sh) file contains:
+
+```bash
+out_dir=../models/ssd_mobilenet_v2_raccoon/
+mkdir -p $out_dir
+python model_main_tf2.py --alsologtostderr --model_dir=$out_dir \
+                         --pipeline_config_path=../models/ssd_mobilenet_v2_raccoon.config \
+                         --checkpoint_dir=$out_dir  2>&1 | tee $out_dir/eval.log
+```
+
+If you don't have enough resources, you can ignore running the validation script, and run it only once when the training is done.
+
+
+
+---
 
 ## Exporting your trained model for inference
 
