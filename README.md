@@ -16,12 +16,12 @@ However, I will add all the details and working examples for the new comers who 
 
 ## Roadmap
 
-This tutorial should take you from installation, to running pre-trained detection model, and training/evaluation your models with a custom dataset.
+This tutorial should take you from installation, to running pre-trained detection model, then training your model with a custom dataset, and exporting your model for inference.
 
 1. [Installation](#installation)
 2. [Inference with pre-trained models](#inference-with-pre-trained-models)
 3. [Preparing your custom dataset for training](#preparing-your-custom-dataset-for-training)
-4. Training object detction model with your custom dataset
+4. [Training object detection model with your custom dataset](#training-object-detection-model-with-your-custom-dataset)
 5. Exporting your trained model for inference
 
 
@@ -163,6 +163,9 @@ The raccoon dataset contains a total of 200 images with 217 raccoons, which is s
 The original [dataset repo](https://github.com/datitran/raccoon_dataset) provides many scripts to deal with the dataset and randomly select train and test splits with 160 and 40 images respectively.
 However, just for convenience, and to decrease the efforts needed, I have included the dataset images and annotation in this repo (in [data/raccoon_data/](data/raccoon_data/) ), and split them manually, taking the first 160 images for training, and the last 40 images for testing.
 I recommend checking the original [dataset repo](https://github.com/datitran/raccoon_dataset), along with this [article](https://towardsdatascience.com/how-to-train-your-own-object-detector-with-tensorflows-object-detector-api-bec72ecfe1d9) written by the author of the dataset. 
+Here are some images from the raccoon dataset ([source](https://towardsdatascience.com/how-to-train-your-own-object-detector-with-tensorflows-object-detector-api-bec72ecfe1d9)).
+
+![raccoon_dataset](data/samples/docs/raccoon_dataset.jpeg)
 
 
 First step to start training your model is to generate [TFRecord](https://www.tensorflow.org/tutorials/load_data/tfrecord) file from the dataset annotations.
@@ -189,7 +192,7 @@ python generate_tfrecord.py --path_to_images ../data/raccoon_data/train/images \
                             --path_to_save_tfrecords ../data/raccoon_data/train.record
 ``` 
 
-For convenience, I have added all these steps in a shell file that you can run to generate the csv files and use them to generate the tfrecords.
+For convenience, I have added all these steps in a shell script that you can run to generate the csv files and use them to generate the tfrecords.
 So simply run this shell file as follows:
 
 ```bash
@@ -205,13 +208,13 @@ Et voila, we have the tfrecord files generated, and we can use it in next steps 
 ## Training object detection model with your custom dataset
 
 To start training our model, we need to prepare a configuration file specifying the backbone model and all the required parameters for training and evaluation.
-In this [tutorial](https://github.com/tensorflow/models/blob/master/research/object_detection/g3doc/configuring_jobs.md) from the object detection api you can find explanation of all the required parameters. 
+In this [tutorial](https://github.com/tensorflow/models/blob/master/research/object_detection/g3doc/configuring_jobs.md) from the object detection api you can find an explanation of all the required parameters. 
 But fortunately, they also provide us with many [example config files](https://github.com/tensorflow/models/tree/master/research/object_detection/configs/tf2) that we can use and just modify some parameters to match our requirements.
 
-Here I will be using the the config file of the SSD model with MobileNetV2 backbone as it is small model that can fit in small GPU memory.
+Here I will be using the the config file of the SSD model with MobileNetV2 backbone as it is small model that can fit in a small GPU memory.
 So let's first download the pretrained model with coco dataset that is provided in the [model zoo](https://github.com/tensorflow/models/blob/master/research/object_detection/g3doc/tf2_detection_zoo.md), and use it as initialization to our model.
 This is called fine-tuning, which is simply loading the weights of pretrained model, and use it as a starting point in our training. This will help us too much as we have very small number of images.
-You can read more about transfer learning methods from [here](https://cs231n.github.io/transfer-learning/). 
+You can read more about transfer learning methods [here](https://cs231n.github.io/transfer-learning/). 
 
 ```bash
 cd models/
@@ -224,21 +227,21 @@ tar -xzvf ssd_mobilenet_v2_320x320_coco17_tpu-8.tar.gz
 Then you can download the original config file from [here](https://github.com/tensorflow/models/tree/master/research/object_detection/configs/tf2).
 I downloaded [ssd_mobilenet_v2_320x320_coco17_tpu-8.config](https://github.com/tensorflow/models/blob/master/research/object_detection/configs/tf2/ssd_mobilenet_v2_320x320_coco17_tpu-8.config) and made the following changes:
 
-* Changed `num_classes: 1` as we have only class (raccoon), instead of 90 classes in coco dataset.
-* Changed `fine_tune_checkpoint_type: "classification"` to `fine_tune_checkpoint_type: "detection"` as we will be using the pre-trained detection model as initialization.
+* Changed `num_classes: 1` as we have only one class (raccoon), instead of 90 classes in coco dataset.
+* Changed `fine_tune_checkpoint_type: "classification"` to `fine_tune_checkpoint_type: "detection"` as we are using the pre-trained detection model as initialization.
 * Added the path of the pretrained model in the field `fine_tune_checkpoint:`, for example using the mobilenet v2 model I added `fine_tune_checkpoint: "../models/ssd_mobilenet_v2_320x320_coco17_tpu-8/checkpoint/ckpt-0"`  
 * Changed `batch_size: 512` and used a reasonable number to my GPU memory. I have a 4GB of GPU memory, so I am using `batch_size: 16`
 * Added the maximum number of training iterations in `num_steps:`, and also use the same number in `total_steps:`
 * Adapted the learning rate to our model and batch size (originally they used higher learning rates because they had bigger batch sizes). This values needs some testing and tuning, but finally I used this configuration:
     ``` 
     cosine_decay_learning_rate {
-        learning_rate_base: 0.03
+        learning_rate_base: 0.025
         total_steps: 3000
         warmup_learning_rate: 0.005
         warmup_steps: 100 }
     ```
-* The `label_map_path:` should point to your labelmap (here the raccoon labelmap) `label_map_path: "../models/raccoon_labelmap.pbtxt"`
-* You need to set the `tf_record_input_reader` under both `train_input_reader` and `eval_input_reader`. This should point to the tfrecords we generated.
+* The `label_map_path:` should point to our labelmap file (here the raccoon labelmap) `label_map_path: "../models/raccoon_labelmap.pbtxt"`
+* You need to set the `tf_record_input_reader` under both `train_input_reader` and `eval_input_reader`. This should point to the tfrecords we generated (one for training and one for validation).
     ```
     train_input_reader: {
         label_map_path: "../models/raccoon_labelmap.pbtxt"
@@ -248,7 +251,7 @@ I downloaded [ssd_mobilenet_v2_320x320_coco17_tpu-8.config](https://github.com/t
     }
     ``` 
 
-Yous should also prepare the labelmap according to your data. For our raccoon dataset, the labelmap file contains:
+You should also prepare the labelmap according to your data. For our raccoon dataset, the [labelmap file](models/raccoon_labelmap.pbtxt) contains:
 
 ```
 item {
@@ -257,17 +260,18 @@ item {
 }
 ```
 
-The labelmap file and the modified configuration files are added to this repo for convenience. 
-You can find them is [models/raccoon_labelmap.pbtxt](models/raccoon_labelmap.pbtxt) and [models/ssd_mobilenet_v2_raccoon.config](models/ssd_mobilenet_v2_raccoon.config).
+The labelmap file and the modified configuration files are added to this repo. 
+You can find them in [models/raccoon_labelmap.pbtxt](models/raccoon_labelmap.pbtxt) and [models/ssd_mobilenet_v2_raccoon.config](models/ssd_mobilenet_v2_raccoon.config).
 
 Once you prepare the configuration file, you can start training by typing the following commands: 
 
 ```bash
-cd train_tf2
+# you should run training scriptd from train_tf2/ directory
+cd train_tf2/
 bash start_train.sh
 ```
 
-The [start_train.sh](train_tf2/start_train.sh) file is a simple shell script that contains all the parameters needed for training, and runs the training script.
+The [start_train.sh](train_tf2/start_train.sh) file is a simple shell script runs the training with all the required parameters.
 The shell file contains the following command: 
 
 ```bash
@@ -278,10 +282,13 @@ python model_main_tf2.py --alsologtostderr --model_dir=$out_dir --checkpoint_eve
                          --eval_on_train_data 2>&1 | tee $out_dir/train.log
 ``` 
 
+You can notice that it actually runs the [model_main_tf2.py](train_tf2/model_main_tf2.py), 
+which I copied from the object detection api package (directly in the object_detection folder), and you can also download it from [here]().
+
 It is also recommended to run the validation script along with the training scripts.
 The training script saves a checkpoint every _n_ steps while training, and this value can be specified in the parameter `--checkpoint_every_n`.
-While training is running, the validation script reads these checkpoints once they are available, and use them to evaluate the model with the validation set.
-This will help us to monitor the training progress by printing the values on the terminal, or by using a GUI monitoring package like [tensorboard](https://www.tensorflow.org/tensorboard/get_started) as we will see.  
+While training is running, the validation script reads these checkpoints when they are available, and use them to evaluate the model with the validation set (from the validation tfrecord file).
+This will help us to monitor the training progress by printing the validation mAP on the terminal, or by using a GUI monitoring package like [tensorboard](https://www.tensorflow.org/tensorboard/get_started) as we will see.  
 
 To run the validation script along with training script, open another terminal and run:
 
@@ -299,7 +306,39 @@ python model_main_tf2.py --alsologtostderr --model_dir=$out_dir \
                          --checkpoint_dir=$out_dir  2>&1 | tee $out_dir/eval.log
 ```
 
-If you don't have enough resources, you can ignore running the validation script, and run it only once when the training is done.
+Note that running the evaluation script along with the training requires another GPU dedicated for the evaluation.
+So, if you don't have enough resources, you can ignore running the validation script, and run it only once when the training is done.
+However, I used a simple trick that allowed me to run the evaluation on the CPU, while the training is running on the GPU.
+Simply by adding this flag before running the evaluation script `export CUDA_VISIBLE_DEVICES="-1"`, which makes all the GPUs not visible for tensoflow,
+so it will use the CPU instead. This flag is set in the [start_eval.sh](train_tf2/start_eval.sh) script, and you just need to uncomment this line before running the script.
+
+
+Finally, it is time to see how our training is progressing, which is very easy task using [tensorboard](https://www.tensorflow.org/tensorboard/get_started). 
+Tensorboard reads the training and evaluation log files written by tensorflow, and draws different curves showing the progress of the training loss values (lower is better), and validation accuracy (higher is better).
+To run the tensorboard, just open new terminal window and run the command:
+
+```bash
+tensorboard --logdir=models/ssd_mobilenet_v2_raccoon
+```
+
+the `--logdir` argument should point to the same directory as passed to the `--model_dir` argument used in training and validation scripts.
+The training and validation scripts write their logs in separate folders inside this directory, then tensorboard read these logs and draw the curves.
+
+When you run the tensorboard command, it will not show any GUI, but will give you a link (something like `http://localhost:6006/ `) that you can copy and paste in your favourite internet browser.
+Then you can see all the curves for training and validation.  
+
+The total number of steps is 3000, and here is how the training loss evolved with the steps: 
+
+![detcetion-output1](data/samples/docs/train_loss.png)
+
+For the validation mAP (mean average precision) with the saved checkpoints (a checkpoint saved each 500 steps), you can see the next curve which represents mAP@0.5IoU. 
+Note that here we have only one class, so we actually have the average precision (AP) for this class.
+mAP@0.5IoU means that detection boxes are considered good detections (True positive) if their Intersection over Union (IoU) with the ground truth box is 0.5 or higher.
+I recommend reading this [article](https://www.pyimagesearch.com/2016/11/07/intersection-over-union-iou-for-object-detection/), which explains the idea of Intersection over Union in object detection.
+
+![detcetion-output1](data/samples/docs/val_precision.png)
+
+
 
 
 
