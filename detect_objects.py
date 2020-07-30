@@ -13,7 +13,7 @@ def DetectFromVideo(detector, Video_path, save_output=False, output_dir='output/
 		output_path = os.path.join(output_dir, 'detection_'+ Video_path.split("/")[-1])
 		frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 		frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-		out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*"mp4v"), 25, (frame_width, frame_height))
+		out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*"mp4v"), 30, (frame_width, frame_height))
 
 	while (cap.isOpened()):
 		ret, img = cap.read()
@@ -65,7 +65,7 @@ if __name__ == "__main__":
 	parser.add_argument('--threshold', help='Detection Threshold', type=float, default=0.4)
 	parser.add_argument('--images_dir', help='Directory to input images)', default='data/samples/images/')
 	parser.add_argument('--video_path', help='Path to input video)', default='data/samples/pedestrian_test.mp4')
-	parser.add_argument('--output_directory', help='Path to output images and video', default='data/output')
+	parser.add_argument('--output_directory', help='Path to output images and video', default='data/samples/output')
 	parser.add_argument('--video_input', help='Flag for video input, default: False', action='store_true')  # default is false
 	parser.add_argument('--save_output', help='Flag for save images and video with detections visualized, default: False',
 	                    action='store_true')  # default is false

@@ -58,13 +58,14 @@ class DetectorTF2:
 			score = str(np.round(boxes_list[idx][-1], 2))
 
 			text = cls + ": " + score
-			cv2.rectangle(img, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
+			cv2.rectangle(img, (x_min, y_min), (x_max, y_max), (0, 255, 0), 1)
 			cv2.rectangle(img, (x_min, y_min - 20), (x_min, y_min), (255, 255, 255), -1)
-			cv2.putText(img, text, (x_min + 5, y_min - 7), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+			cv2.putText(img, text, (x_min + 5, y_min - 7), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
 		if det_time != None:
-			elapsed_time = str(det_time) + " ms"
-			cv2.putText(img, elapsed_time, (25, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 2)
+			fps = round(1000. / det_time, 1)
+			fps_txt = str(fps) + " FPS"
+			cv2.putText(img, fps_txt, (25, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 2)
 
 		return img
 
